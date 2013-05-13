@@ -1,0 +1,38 @@
+#!/bin/bash
+
+WARNING_MEM="${1:-2}"
+CRITICAL_MEM="${2:-8}"
+WARNING_CPU="${3:-4}"
+CRITICAL_CPU="${4:-8}"
+
+SERVICE_SCRIPT="/etc/init.d/onlinebackup"
+SUCCESS_OUTPUT='^OnlineBackup is running as pid +[0-9]+ [a-zA-Z0-9/]+ +[0-9:-]+ StoreGrid$'
+STATUS_PARAM="status"
+
+current_status=`$SERVICE_SCRIPT $STATUS_PARAM  | head -n2 | tail -n1`
+is_online=`echo "$current_status" | egrep -o "$SUCCESS_OUTPUT"`
+
+if [ -z "$is_online" ]
+then
+  echo -n "CRITICAL: Onlinebackup service is not running!"
+  exit 2
+fi
+
+process_pid=`echo "$current_status" | cut -c "31-37" | tr -d '\n '`
+resource_usage=`ps -p $process_pid -o "%cpu,%mem" | tail -n1`
+
+cpu_percentage=`echo "$resource_usage" | egrep -o '^ *[0-9.]+' | tr -d ' '`
+mem_percentage=`echo "$resource_usage" | egrep -o '[0-9.]+$'`
+
+if [ $(echo "$cpu_percentage > $CRITICAL_CPU" | bc) -eq 1 -o $(echo "$mem_percentage > $CRITICAL_MEM" | bc) -eq 1 ]
+then
+  echo "CRITICAL: Onlinebackup outside limits, pid $process_pid, CPU: ${cpu_percentage}%, Mem: ${mem_percentage}%"
+  exit 2
+elif [ $(echo "$cpu_percentage > $WARNING_CPU" | bc) -eq 1 -o $(echo "$mem_percentage > $WARNING_MEM" | bc) -eq 1 ]
+then
+  echo "WARNING: Onlinebackup outside limits, pid $process_pid, CPU: ${cpu_percentage}%, Mem: ${mem_percentage}%"
+  exit 1
+else
+  echo "Online backup service is running, pid $process_pid, CPU: ${cpu_percentage}%, Mem: ${mem_percentage}%"
+  exit 0
+fi
